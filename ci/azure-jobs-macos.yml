@@ -1,0 +1,41 @@
+jobs:
+- job: macOS
+  pool:
+    vmImage: 'macOS-11'
+  timeoutInMinutes: 180
+  variables:
+    OS: 'mac'
+    ARCH: 'x86_64'
+    COPYFILE_DISABLE: 1 # Stop creating shit files (https://superuser.com/questions/259703/get-mac-tar-to-stop-putting-filenames-in-tar-archives)
+    HOMEBREW_NO_INSTALL_CLEANUP: 1 # Might speed up homebrew commands(?)
+  steps:
+  - checkout: self
+    clean: true
+    submodules: recursive
+  - bash: ./ci/print_environment.sh
+    displayName: Print Environment
+  - bash: |
+      source ./ci/install_dependencies.sh
+      # Pass modified PATH to following steps:
+      echo "##vso[task.setvariable variable=PATH]$PATH"
+    displayName: Install Dependencies
+  - bash: ./ci/print_environment.sh
+    displayName: Print New Environment  # Print again since it has been modified
+  - bash: ./ci/build_librepcb.sh
+    displayName: Build LibrePCB
+  - bash: ./ci/build_mac_bundle.sh
+    displayName: Build Bundle
+  - bash: ./build/tests/unittests/librepcb-unittests
+    displayName: Run LibrePCB Unittests
+  - bash: pytest -vvv --librepcb-executable="build/install/opt/librepcb-cli.app/Contents/MacOS/librepcb-cli" ./tests/cli
+    displayName: Run LibrePCB-CLI Functional Tests
+  - bash: pytest -vvv --librepcb-executable="build/install/opt/librepcb.app/Contents/MacOS/librepcb" --reruns 5 --reruns-delay 10 ./tests/funq
+    displayName: Run LibrePCB Functional Tests
+  - bash: ./ci/upload_artifacts.sh
+    displayName: Upload Artifacts
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    env:
+      UPLOAD_URL: $(ARTIFACTS_UPLOAD_URL)
+      UPLOAD_USER: $(ARTIFACTS_UPLOAD_USER)
+      UPLOAD_PASS: $(ARTIFACTS_UPLOAD_PASS)
+      UPLOAD_SIGN_KEY: $(ARTIFACTS_UPLOAD_SIGN_KEY)
